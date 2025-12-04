@@ -1253,6 +1253,8 @@ io.on('connection', (socket) => {
     }
 });
 
-http.listen(3000, () => {
-    console.log('Servidor corriendo en http://localhost:3000');
+const port = process.env.PORT || 3000;
+http.listen(port, () => {
+    console.log(`✅ SERVIDOR LISTO EN PUERTO ${port}`);
+
 });
