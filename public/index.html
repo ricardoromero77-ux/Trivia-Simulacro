@@ -210,23 +210,6 @@
     let playerTimeLeft = 30;
     let myScore = 0;
 
-    // AUDIO
-    const musicLobby = document.getElementById('lobby-music');
-    const musicGame = document.getElementById('game-music');
-
-    function playLobbyMusic() {
-        musicGame.pause();
-        musicLobby.volume = 0.4;
-        musicLobby.play().catch(e => console.log("Audio play blocked"));
-    }
-
-    function playGameMusic() {
-        musicLobby.pause();
-        musicGame.volume = 0.3;
-        musicGame.currentTime = 0;
-        musicGame.play().catch(e => console.log("Audio play blocked"));
-    }
-
     // VISTAS
     function hideAll() {
         document.getElementById('home-screen').classList.add('hidden');
