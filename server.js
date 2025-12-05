@@ -4,7 +4,16 @@ const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 const path = require('path');
 
+// Servir archivos estáticos
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Ruta principal (IMPORTANTE)
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Favicon (evita error 404)
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // BASE DE DATOS DE PREGUNTAS (PEGA AQUÍ TUS CIENTOS DE PREGUNTAS)
 const questionsDB = [
@@ -1168,23 +1177,24 @@ const questionsDB = [
 { "cat": "Traducciones e Idiomas", "q": "¿Qué idioma usa 'tonos' para cambiar el significado de las palabras (es una lengua tonal)?", "a": ["Español", "Inglés", "Chino Mandarín", "Ruso"], "correct": 2 }
 ];
 
-let rooms = {}; // Guarda el estado de cada sala
+let rooms = {};
 
 io.on('connection', (socket) => {
+    console.log(`🔌 Cliente conectado: ${socket.id}`);
     
     // CREAR SALA (PANTALLA DEL ANFITRION/TV)
     socket.on('createRoom', () => {
-        const roomId = Math.floor(1000 + Math.random() * 9000).toString(); // Código de 4 dígitos
+        const roomId = Math.floor(1000 + Math.random() * 9000).toString();
         rooms[roomId] = {
             hostId: socket.id,
             players: {},
             currentQuestion: null,
             questionIndex: 0,
-            state: 'lobby' // lobby, playing, results
+            state: 'lobby'
         };
         socket.join(roomId);
         socket.emit('roomCreated', roomId);
-        console.log(`Sala creada: ${roomId}`);
+        console.log(`✅ Sala creada: ${roomId}`);
     });
 
     // UNIRSE A SALA (CELULAR JUGADOR)
@@ -1193,10 +1203,9 @@ io.on('connection', (socket) => {
         if (room && room.state === 'lobby') {
             room.players[socket.id] = { name, score: 0, avatar: '👤' };
             socket.join(roomId);
-            // Avisar al host que llegó alguien
             io.to(room.hostId).emit('updatePlayerList', Object.values(room.players));
-            // Confirmar al jugador
             socket.emit('joinedSuccess', roomId);
+            console.log(`👤 ${name} se unió a sala ${roomId}`);
         } else {
             socket.emit('errorMsg', 'Sala no existe o ya empezó el juego.');
         }
@@ -1221,40 +1230,52 @@ io.on('connection', (socket) => {
 
         if (player) {
             if (isCorrect) {
-                // LÓGICA DE PUNTOS TIPO KAHOOT
-                // Base 1000 pts + (Porcentaje de tiempo restante * 1000)
-                // Ejemplo: Si quedan 20 seg de 30, ganas más puntos.
                 const maxPoints = 1000;
                 const speedBonus = Math.floor((timeLeft / 30) * 500); 
                 player.score += (maxPoints + speedBonus);
             }
-            // Enviar feedback solo a ese jugador
             socket.emit('answerResult', isCorrect);
         }
     });
 
-    // SIGUIENTE PREGUNTA (Controlado por el Host)
+    // SIGUIENTE PREGUNTA
     socket.on('nextQuestion', (roomId) => {
         sendNextQuestion(roomId);
     });
 
     function sendNextQuestion(roomId) {
         const room = rooms[roomId];
-        // Seleccionar pregunta aleatoria o secuencial
         const q = questionsDB[Math.floor(Math.random() * questionsDB.length)];
         room.currentQuestion = q;
         
-        // Enviar a todos en la sala (Host muestra pregunta, Jugadores muestran botones)
         io.to(roomId).emit('newQuestion', {
+            cat: q.cat,
             q: q.q,
-            options: q.a, // Solo texto
+            options: q.a,
             time: 30
         });
     }
+
+    // DESCONEXIÓN
+    socket.on('disconnect', () => {
+        console.log(`❌ Cliente desconectado: ${socket.id}`);
+        // Limpiar jugador de todas las salas
+        Object.keys(rooms).forEach(roomId => {
+            const room = rooms[roomId];
+            if (room.players[socket.id]) {
+                delete room.players[socket.id];
+                io.to(room.hostId).emit('updatePlayerList', Object.values(room.players));
+            }
+            // Si el host se desconecta, eliminar sala
+            if (room.hostId === socket.id) {
+                delete rooms[roomId];
+                console.log(`🗑️ Sala ${roomId} eliminada`);
+            }
+        });
+    });
 });
 
 const port = process.env.PORT || 3000;
 http.listen(port, () => {
     console.log(`✅ SERVIDOR LISTO EN PUERTO ${port}`);
 });
-
