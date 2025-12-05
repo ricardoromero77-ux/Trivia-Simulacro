@@ -15,7 +15,9 @@ app.get('/', (req, res) => {
 // Favicon (evita error 404)
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 
-// BASE DE DATOS DE PREGUNTAS (PEGA AQUÍ TUS CIENTOS DE PREGUNTAS)
+// ==========================================
+// 1. BASE DE DATOS DE PREGUNTAS
+// ==========================================
 const questionsDB = [
 { cat: "Ciencia", q: "¿Cuál es el nombre del efecto por el que un material pierde su superconductividad al alcanzar una cierta corriente crítica?", a: ["Efecto Meissner","Efecto Josephson","Colapso cuántico","Transición por corriente crítica"], correct: 1 },
 { cat: "Historia", q: "¿Qué tratado puso fin formalmente a la Paz de Westfalia y en qué año se firmó?", a: ["Tratado de Münster, 1648","Tratado de Osnabrück, 1648","Paz de Munster-Osnabrück, 1648","Tratado de Westfalia, 1650"], correct: 2 },
@@ -1177,19 +1179,18 @@ const questionsDB = [
 { "cat": "Traducciones e Idiomas", "q": "¿Qué idioma usa 'tonos' para cambiar el significado de las palabras (es una lengua tonal)?", "a": ["Español", "Inglés", "Chino Mandarín", "Ruso"], "correct": 2 }
 ];
 
-let rooms = {};
+let rooms = {}; // Estado de las salas
 
 io.on('connection', (socket) => {
     console.log(`🔌 Cliente conectado: ${socket.id}`);
     
-    // CREAR SALA (PANTALLA DEL ANFITRION/TV)
+    // CREAR SALA (HOST)
     socket.on('createRoom', () => {
         const roomId = Math.floor(1000 + Math.random() * 9000).toString();
         rooms[roomId] = {
             hostId: socket.id,
             players: {},
             currentQuestion: null,
-            questionIndex: 0,
             state: 'lobby'
         };
         socket.join(roomId);
@@ -1197,17 +1198,28 @@ io.on('connection', (socket) => {
         console.log(`✅ Sala creada: ${roomId}`);
     });
 
-    // UNIRSE A SALA (CELULAR JUGADOR)
+    // UNIRSE JUGADOR
     socket.on('joinRoom', ({ roomId, name }) => {
         const room = rooms[roomId];
         if (room && room.state === 'lobby') {
-            room.players[socket.id] = { name, score: 0, avatar: '👤' };
+            // Asignar avatar aleatorio
+            const avatars = ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮'];
+            const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)];
+            
+            room.players[socket.id] = { 
+                id: socket.id,
+                name: name, 
+                score: 0, 
+                avatar: randomAvatar,
+                hasAnswered: false // Control vital para saber si ya respondió
+            };
+            
             socket.join(roomId);
             io.to(room.hostId).emit('updatePlayerList', Object.values(room.players));
             socket.emit('joinedSuccess', roomId);
             console.log(`👤 ${name} se unió a sala ${roomId}`);
         } else {
-            socket.emit('errorMsg', 'Sala no existe o ya empezó el juego.');
+            socket.emit('errorMsg', 'Sala no existe o ya empezó.');
         }
     });
 
@@ -1223,18 +1235,63 @@ io.on('connection', (socket) => {
     // RECIBIR RESPUESTA
     socket.on('submitAnswer', ({ roomId, answerIndex, timeLeft }) => {
         const room = rooms[roomId];
-        if (!room || !room.currentQuestion) return;
+        
+        // Validación de seguridad
+        if (!room || !room.currentQuestion) {
+            console.log("⚠️ Error: Respuesta recibida sin pregunta activa.");
+            return;
+        }
 
-        const isCorrect = answerIndex === room.currentQuestion.correct;
+        const q = room.currentQuestion;
         const player = room.players[socket.id];
+        
+        // Evitar doble respuesta o respuesta de jugador fantasma
+        if (!player || player.hasAnswered) return;
 
-        if (player) {
-            if (isCorrect) {
-                const maxPoints = 1000;
-                const speedBonus = Math.floor((timeLeft / 30) * 500); 
-                player.score += (maxPoints + speedBonus);
-            }
-            socket.emit('answerResult', isCorrect);
+        // Marcar como respondido
+        player.hasAnswered = true;
+
+        // Asegurar tipos numéricos para la comparación
+        const receivedIdx = parseInt(answerIndex);
+        const correctIdx = parseInt(q.correct);
+        
+        console.log(`📝 Respuesta de ${player.name}: ${receivedIdx} (Correcta: ${correctIdx})`);
+
+        const isCorrect = (receivedIdx === correctIdx);
+        
+        // Recuperar texto de respuesta correcta
+        let correctAnswerText = "Error en datos";
+        if (q.a && q.a[correctIdx]) {
+            correctAnswerText = q.a[correctIdx];
+        }
+
+        // Lógica de Puntos
+        if (isCorrect) {
+            const maxPoints = 1000;
+            const speedBonus = Math.floor((timeLeft / 30) * 500); 
+            player.score += (maxPoints + speedBonus);
+        }
+        
+        // 1. Responder al jugador individual
+        socket.emit('answerResult', { 
+            isCorrect: isCorrect, 
+            correctText: correctAnswerText 
+        });
+
+        // 2. Actualizar Ranking en VIVO al Host
+        const sortedPlayers = Object.values(room.players).sort((a, b) => b.score - a.score);
+        io.to(room.hostId).emit('updateLeaderboard', sortedPlayers);
+
+        // 3. VERIFICAR SI TODOS LOS JUGADORES YA RESPONDIERON (Agilizar Juego)
+        const allPlayers = Object.values(room.players);
+        // Filtramos solo jugadores conectados actualmente
+        const activePlayers = allPlayers.filter(p => p.id !== room.hostId); 
+        const allAnswered = activePlayers.every(p => p.hasAnswered);
+
+        if (allAnswered && activePlayers.length > 0) {
+            console.log("⚡ ¡Todos respondieron! Terminando ronda...");
+            // Enviamos señal de fin de ronda con la respuesta correcta para iluminarla
+            io.to(roomId).emit('roundEnded', { correctIndex: correctIdx });
         }
     });
 
@@ -1243,11 +1300,29 @@ io.on('connection', (socket) => {
         sendNextQuestion(roomId);
     });
 
+    // TIEMPO AGOTADO (Trigger desde el Host cuando el reloj llega a 0)
+    socket.on('timeUp', (roomId) => {
+        const room = rooms[roomId];
+        if(room && room.currentQuestion) {
+             // Revelar respuesta aunque no hayan respondido todos
+             io.to(roomId).emit('roundEnded', { correctIndex: room.currentQuestion.correct });
+        }
+    });
+
     function sendNextQuestion(roomId) {
         const room = rooms[roomId];
-        const q = questionsDB[Math.floor(Math.random() * questionsDB.length)];
+        if(!room) return;
+
+        // Resetear estado de respuesta de los jugadores para la nueva ronda
+        Object.values(room.players).forEach(p => p.hasAnswered = false);
+
+        // Elegir pregunta al azar
+        const randomIndex = Math.floor(Math.random() * questionsDB.length);
+        const q = questionsDB[randomIndex];
         room.currentQuestion = q;
         
+        console.log(`❓ Pregunta enviada: "${q.q}"`);
+
         io.to(roomId).emit('newQuestion', {
             cat: q.cat,
             q: q.q,
