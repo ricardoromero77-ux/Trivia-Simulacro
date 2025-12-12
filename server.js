@@ -12,11 +12,6 @@ app.get('/', (req, res) => {
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // ==========================================
-// CONFIGURACIÓN
-// ==========================================
-const PREGUNTAS_POR_JUEGO = 5; // <--- Define aquí cuántas preguntas durará el juego
-
-// ==========================================
 // BASE DE DATOS DE PREGUNTAS
 // ==========================================
 const questionsDB = [
@@ -1193,7 +1188,8 @@ io.on('connection', (socket) => {
             players: {},
             currentQuestion: null,
             state: 'lobby',
-            roundsPlayed: 0
+            roundsPlayed: 0,
+            totalRounds: 5 // Valor por defecto
         };
         socket.join(roomId);
         socket.emit('roomCreated', roomId);
@@ -1221,9 +1217,11 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('startGame', (roomId) => {
+    // MODIFICADO: Ahora recibe el límite de preguntas
+    socket.on('startGame', ({ roomId, limit }) => {
         const room = rooms[roomId];
         if (room) {
+            room.totalRounds = parseInt(limit) || 5; // Guardar el límite elegido
             room.state = 'playing';
             room.roundsPlayed = 0;
             sendNextQuestion(roomId);
@@ -1254,7 +1252,6 @@ io.on('connection', (socket) => {
         const sortedPlayers = Object.values(room.players).sort((a, b) => b.score - a.score);
         io.to(room.hostId).emit('updateLeaderboard', sortedPlayers);
 
-        // Verificar si todos respondieron
         const allPlayers = Object.values(room.players);
         const activePlayers = allPlayers.filter(p => p.id !== room.hostId); 
         const allAnswered = activePlayers.every(p => p.hasAnswered);
@@ -1279,7 +1276,8 @@ io.on('connection', (socket) => {
         const room = rooms[roomId];
         if(!room) return;
 
-        if (room.roundsPlayed >= PREGUNTAS_POR_JUEGO) {
+        // MODIFICADO: Usa la variable de la sala, no la global
+        if (room.roundsPlayed >= room.totalRounds) {
             const sortedPlayers = Object.values(room.players).sort((a, b) => b.score - a.score);
             const winner = sortedPlayers.length > 0 ? sortedPlayers[0] : null;
             io.to(roomId).emit('gameOver', { winner: winner });
@@ -1298,7 +1296,7 @@ io.on('connection', (socket) => {
             options: q.a,
             time: 30,
             currentRound: room.roundsPlayed,
-            totalRounds: PREGUNTAS_POR_JUEGO
+            totalRounds: room.totalRounds // Enviar total dinámico al cliente
         });
     }
 
