@@ -12,9 +12,9 @@ app.get('/', (req, res) => {
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // ==========================================
-// CONFIGURACIÓN DEL JUEGO
+// CONFIGURACIÓN
 // ==========================================
-const PREGUNTAS_POR_JUEGO = 50; // <--- ¡CAMBIA ESTE NÚMERO! (Ej: 5, 10, 15)
+const PREGUNTAS_POR_JUEGO = 5; // <--- Define aquí cuántas preguntas durará el juego
 
 // ==========================================
 // BASE DE DATOS DE PREGUNTAS
@@ -1178,6 +1178,7 @@ const questionsDB = [
 { "cat": "Traducciones e Idiomas", "q": "¿Qué es un 'cognado'?", "a": ["Palabras en distintos idiomas que comparten origen y significado similar", "Un pariente lejano", "Una palabra intraducible", "Un error de traducción"], "correct": 0 },{ "cat": "Traducciones e Idiomas", "q": "¿Qué significa 'Veni, vidi, vici'?", "a": ["Vine, vi, vencí", "Viví, amé, reí", "Vine, vencí, me fui", "Ver es creer"], "correct": 0 },
 { "cat": "Traducciones e Idiomas", "q": "¿De qué idioma proviene la palabra 'Canguro' (según la leyenda popular)?", "a": ["Guugu Yimithirr", "Maorí", "Inglés", "Indonesio"], "correct": 0 },
 { "cat": "Traducciones e Idiomas", "q": "¿Qué idioma usa 'tonos' para cambiar el significado de las palabras (es una lengua tonal)?", "a": ["Español", "Inglés", "Chino Mandarín", "Ruso"], "correct": 2 }
+
 ];
 
 let rooms = {};
@@ -1192,7 +1193,7 @@ io.on('connection', (socket) => {
             players: {},
             currentQuestion: null,
             state: 'lobby',
-            roundsPlayed: 0 // Contador de rondas
+            roundsPlayed: 0
         };
         socket.join(roomId);
         socket.emit('roomCreated', roomId);
@@ -1224,7 +1225,7 @@ io.on('connection', (socket) => {
         const room = rooms[roomId];
         if (room) {
             room.state = 'playing';
-            room.roundsPlayed = 0; // Reiniciar contador
+            room.roundsPlayed = 0;
             sendNextQuestion(roomId);
         }
     });
@@ -1278,28 +1279,19 @@ io.on('connection', (socket) => {
         const room = rooms[roomId];
         if(!room) return;
 
-        // ==========================================
-        // LÓGICA DE FIN DE JUEGO (GAME OVER)
-        // ==========================================
         if (room.roundsPlayed >= PREGUNTAS_POR_JUEGO) {
-            // Calcular ganador final
             const sortedPlayers = Object.values(room.players).sort((a, b) => b.score - a.score);
             const winner = sortedPlayers.length > 0 ? sortedPlayers[0] : null;
-            
-            console.log(`🏁 Fin del juego en sala ${roomId}`);
             io.to(roomId).emit('gameOver', { winner: winner });
-            return; // ¡Detener aquí! No enviar más preguntas
+            return; 
         }
 
-        // Si no ha terminado, seguimos...
         Object.values(room.players).forEach(p => p.hasAnswered = false);
-        room.roundsPlayed++; // Sumar ronda
+        room.roundsPlayed++; 
 
         const q = questionsDB[Math.floor(Math.random() * questionsDB.length)];
         room.currentQuestion = q;
         
-        console.log(`❓ Pregunta ${room.roundsPlayed}/${PREGUNTAS_POR_JUEGO}: "${q.q}"`);
-
         io.to(roomId).emit('newQuestion', {
             cat: q.cat,
             q: q.q,
@@ -1310,7 +1302,6 @@ io.on('connection', (socket) => {
         });
     }
 
-    // DESCONEXIÓN
     socket.on('disconnect', () => {
         Object.keys(rooms).forEach(roomId => {
             const room = rooms[roomId];
