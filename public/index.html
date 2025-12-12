@@ -87,6 +87,12 @@
         
         <div id="host-lobby-area">
             <h3 style="text-align: center;">Código: <span id="room-code-display" style="font-size: 3rem; color: var(--primary);">...</span></h3>
+            
+            <div style="text-align: center; margin: 20px 0; border-top: 1px solid rgba(255,255,255,0.2); border-bottom: 1px solid rgba(255,255,255,0.2); padding: 15px;">
+                <label style="color: #ccc; display: block; margin-bottom: 5px;">Cantidad de Preguntas:</label>
+                <input type="number" id="host-questions-limit" value="5" min="1" max="50" style="width: 80px; font-weight: bold; color: var(--accent);">
+            </div>
+
             <ul id="host-player-list" style="display:flex; flex-wrap:wrap; gap:10px; justify-content:center; list-style:none; padding:0;"></ul>
             <div style="text-align:center; margin-top:30px;"><button class="btn btn-green" onclick="hostStartGame()" id="start-game-btn" disabled>🚦 ARRANCAR</button></div>
         </div>
@@ -173,9 +179,12 @@
     });
 
     function hostStartGame() {
+        // LEER EL LÍMITE DEL INPUT
+        const limit = document.getElementById('host-questions-limit').value || 5;
+        
         document.getElementById('host-lobby-area').classList.add('hidden');
         document.getElementById('host-game-area').classList.remove('hidden');
-        socket.emit('startGame', currentRoomId);
+        socket.emit('startGame', { roomId: currentRoomId, limit: limit });
     }
     function nextQ() { socket.emit('nextQuestion', currentRoomId); }
 
